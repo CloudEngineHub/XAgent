@@ -8,6 +8,8 @@ import requests
 from colorama import Fore
 from XAgent.utils import ToolCallStatusCode
 from XAgent.ai_functions import function_manager
+from XAgent.file_utils import write_binary_file
+from XAgent.http_utils import toolserver_request_timeout
 from XAgent.recorder import RunningRecoder
 
 
@@ -46,8 +48,9 @@ def unwrap_tool_response(obj, logger=None):
                     name = obj.get('name', uuid.uuid4().hex)
                     if obj['media_type'] == 'image/png' and not str(name).endswith('.png'):
                         name += '.png'
-                    with open(os.path.join('local_workspace', name), 'wb') as f:
-                        f.write(base64.b64decode(obj['data']))
+                    write_binary_file(
+                        'local_workspace', name, base64.b64decode(obj['data'])
+                    )
                     return {
                         'media_type': obj['media_type'],
                         'file_name': name
@@ -86,6 +89,7 @@ class ToolServerInterface():
             NotImplementedError: If trying to use a non-selfhost ToolServer.
         """
         self.config = config
+        self.request_timeout = toolserver_request_timeout(config)
         if config.use_selfhost_toolserver:
             self.url = config.selfhost_toolserver_url
         else:
@@ -190,7 +194,11 @@ class ToolServerInterface():
                 status_code = cache_output["response_status_code"]
             else:
                 response = requests.post(
-                    url, json=payload, timeout=10, cookies=self.cookies)
+                    url,
+                    json=payload,
+                    timeout=self.request_timeout,
+                    cookies=self.cookies,
+                )
                 status_code = response.status_code
                 response.raise_for_status()
                 response = response.json()
